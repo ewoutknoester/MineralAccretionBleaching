@@ -1,0 +1,149 @@
+---
+---
+title: "MAP_Bleaching"
+author: "Richard"
+date: "6-4-2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(rstatix)
+library(ggplot2)
+library(tidyverse)
+library(tidyr)
+library(ggpubr)
+```
+#Het lukt me nog niet om de na values in de mean calc te doen & probeer het te linken met de 0 scores in de survival (maar is nog niet gelukt)
+```{r}
+Bleaching_MAP <- Bleaching_MAP
+na.rm = TRUE
+```
+
+```{r}
+Bleaching_MAP2 <- Bleaching_MAP %>%
+rename(
+  Brightness = "Green")
+```
+
+##Check data str
+```{r}
+str(Bleaching_MAP2)
+```
+
+##summary MAP2
+```{r Bleaching_MAP} 
+summary(Bleaching_MAP2)
+``` 
+
+
+#Ook grouperen met means van survival & brightness lukt nog niet
+
+```{r}
+
+Bleaching_MAP3 <- Bleaching_MAP2 %>% 
+  
+  group_by(Experiment, Structure, Species, Date) %>% 
+  summarise(mean_Brightness = mean(Brightness))
+
+  
+Bleaching_MAP3 <- transform(Bleaching_MAP3, Species=as.factor(Species))
+
+```
+
+```{r}
+
+Bleaching_MAP4 <- Bleaching_MAP2 %>% 
+rename(
+  Survival = "Survival (%)")
+```
+
+```{r}
+Bleaching_MAP5 <- Bleaching_MAP4 %>%
+  group_by(Experiment, Structure, Species, Date) %>% 
+  summarise(mean_Survival = mean(Survival))
+
+ 
+Bleaching_MAP5 <- transform(Bleaching_MAP5, Species=as.factor(Species))
+```
+
+###have got some trouble putting mean survival and mean_brightness in same dataframe
+
+#look at outliers:
+```{r}
+Bleaching_MAP3 %>%
+  identify_outliers(mean_Brightness)
+```
+```{r}
+Bleaching_MAP5 %>%
+  identify_outliers(mean_Survival)
+```
+#Assumption 2: Normal distribution Check
+##Visualisation --> skewed
+```{r}
+ggplot(Bleaching_MAP3,  aes(x=mean_Brightness)) + geom_density()
+```
+```{r}
+ggplot(Bleaching_MAP4,  aes(x=Survival)) + geom_density()
+```
+```{r}
+ggplot(Bleaching_MAP5,  aes(x=mean_Survival)) + geom_density()
+```
+
+```{r}
+ggqqplot(Bleaching_MAP3,
+         "mean_Brightness")
+```
+#SQRT EN LOG TRANSFORMATION MAKEN HET VERDER WEG VAN EEN NORMAL
+```{r}
+Bleaching_MAP7 <- Bleaching_MAP3
+
+Bleaching_MAP7$mean_Brightness_Sqrd=
+     Bleaching_MAP3$mean_Brightness^(2)
+```
+
+
+```{r}
+
+Bleaching_MAP3$mean_Brightness_sqrt = sqrt(Bleaching_MAP3$mean_Brightness)
+
+
+ggqqplot(Bleaching_MAP3,
+         "mean_Brightness_sqrt")
+```
+```{r}
+
+Bleaching_MAP3$mean_Brightness_log10 = log10(Bleaching_MAP3$mean_Brightness)
+
+
+ggqqplot(Bleaching_MAP3,
+         "mean_Brightness_log10")
+```
+##SQUARED WEL --> MAAR DENK DA DIT NIET EEN GOEDE TRANSFORMATIE IS WANT KLEIN BLIJFT KLEIN, GROOT WORDT GROOT...
+```{r}
+Bleaching_MAP7 <- Bleaching_MAP3
+
+Bleaching_MAP7$mean_Brightness_Sqrd=
+     Bleaching_MAP3$mean_Brightness^(2)
+```
+
+```{r}
+ggqqplot(Bleaching_MAP7,
+      "mean_Brightness_Sqrd")
+```
+
+
+
+```{r}
+plot(data)
+fit curve
+
+take residuals
+
+```
