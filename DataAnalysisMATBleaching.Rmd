@@ -5,6 +5,15 @@ author: "Richard"
 date: "6-4-2021"
 output: html_document
 ---
+Import dataset of: 
+
+```{r}
+setwd("C:/Users/hp/Documents/R/R-Git-Link/MATbleaching/MATbleaching")
+
+```
+
+```{r}
+Bleaching_MAPcsv = read.csv("Bleaching_MAP.csv")
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -19,11 +28,6 @@ library(ggplot2)
 library(tidyverse)
 library(tidyr)
 library(ggpubr)
-```
-#Het lukt me nog niet om de na values in de mean calc te doen & probeer het te linken met de 0 scores in de survival (maar is nog niet gelukt)
-```{r}
-Bleaching_MAP <- Bleaching_MAP
-na.rm = TRUE
 ```
 
 ```{r}
@@ -43,12 +47,12 @@ summary(Bleaching_MAP2)
 ``` 
 
 
-#Ook grouperen met means van survival & brightness lukt nog niet
+#Ggrouperen met means van survival & brightness lukt nog niet, en ben nog niet helemaal uit de na's maar ga de if functie hier gebruiken. 
 
 ```{r}
 
 Bleaching_MAP3 <- Bleaching_MAP2 %>% 
-  
+
   group_by(Experiment, Structure, Species, Date) %>% 
   summarise(mean_Brightness = mean(Brightness))
 
@@ -73,11 +77,23 @@ Bleaching_MAP5 <- Bleaching_MAP4 %>%
 Bleaching_MAP5 <- transform(Bleaching_MAP5, Species=as.factor(Species))
 ```
 
+
+```{r}
+Bleachin_MAP6 = merge(Bleaching_MAP3, Bleaching_MAP5)
+```
+
+
+
+
+
+
+
 ###have got some trouble putting mean survival and mean_brightness in same dataframe
 
 #look at outliers:
 ```{r}
 Bleaching_MAP3 %>%
+
   identify_outliers(mean_Brightness)
 ```
 ```{r}
@@ -103,7 +119,6 @@ ggqqplot(Bleaching_MAP3,
 #SQRT EN LOG TRANSFORMATION MAKEN HET VERDER WEG VAN EEN NORMAL
 ```{r}
 Bleaching_MAP7 <- Bleaching_MAP3
-
 Bleaching_MAP7$mean_Brightness_Sqrd=
      Bleaching_MAP3$mean_Brightness^(2)
 ```
@@ -120,15 +135,12 @@ ggqqplot(Bleaching_MAP3,
 ```{r}
 
 Bleaching_MAP3$mean_Brightness_log10 = log10(Bleaching_MAP3$mean_Brightness)
-
-
 ggqqplot(Bleaching_MAP3,
          "mean_Brightness_log10")
 ```
 ##SQUARED WEL --> MAAR DENK DA DIT NIET EEN GOEDE TRANSFORMATIE IS WANT KLEIN BLIJFT KLEIN, GROOT WORDT GROOT...
 ```{r}
 Bleaching_MAP7 <- Bleaching_MAP3
-
 Bleaching_MAP7$mean_Brightness_Sqrd=
      Bleaching_MAP3$mean_Brightness^(2)
 ```
@@ -136,14 +148,32 @@ Bleaching_MAP7$mean_Brightness_Sqrd=
 ```{r}
 ggqqplot(Bleaching_MAP7,
       "mean_Brightness_Sqrd")
+      
+```
+Ik was vandaag nog begonnen met de boxcox - mar niet ver gekomen
+```{r}
+Bleaching_MAP8$mean_Brightness_boxcox = boxcox(Bleaching_MAP3$mean_Brightness)
+```
+
+```{r}
+Bleaching_MAP3$mean_Brightness_boxcox = boxcox(Bleaching_MAP3$mean_Brightness)
+
 ```
 
 
+??
+
+
+ggqqplot(Bleaching_MAP3,
+         "mean_Brightness_sqrt")
+```
 
 ```{r}
 plot(data)
 fit curve
 
 take residuals
+
+
 
 ```
