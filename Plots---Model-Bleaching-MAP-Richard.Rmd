@@ -1,0 +1,349 @@
+---
+title: "Plots & Models Bleaching MAP Richard"
+author: "Richard"
+date: "1-6-2021"
+output: html_document
+---
+What do we want to find out?
+- Brightness_mean (Bleaching) as an outome variable, how is it influenced by:
+Independant Varriables: Species(within?), Experiment (between), Time/Date (within), Structure (between)
+- Can we see significant differences per time step, per species, between treatments?
+- Is there a correlation with survival?
+
+Libraries --> summary/ varriables --> plots --> Models --> Statistics.
+Questions:
+1) Plots -->  right information being shown/good enough? 
+2) Models --> Is the best mode AIC Lmerand really the best?
+3) Models --> What information do we need from the model & how resent it? Table / on plots?
+4)any more statistics necesarry?
+
+Import dataset from: 
+```{r}
+setwd("C:/Users/hp/Documents/R/R-Git-Link/MATbleaching/MATbleaching")
+getwd()
+```
+read data:
+```{r}
+Bleaching_MAPcsv = read.csv("C:/Users/hp/Documents/R/R-Git-Link/MATbleaching/MATbleaching/Bleaching_MAP.csv", sep = ";")
+``` 
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(rstatix)
+library(ggplot2)
+library(tidyr)
+library(ggpubr)
+library(AICcmodavg)
+library(lme4)
+library(nlme)
+library(gratia)
+library(mgcv)
+```
+```{r}
+Bleaching_MAP2 <- Bleaching_MAPcsv %>%
+rename(
+  Brightness = "Green")
+```
+```{r}
+Bleaching_MAP2 <- Bleaching_MAP2 %>%
+rename(
+  Survival = Survival....)
+```
+#drop fragment
+```{r}
+Bleaching_MAP2$Fragment <- NULL
+```
+
+```{r}
+Bleaching_MAP_Means <- Bleaching_MAP2 %>%
+  group_by(Experiment, Structure, Species, Date) %>%
+  summarise_all(funs(median, mean), na.rm = TRUE)
+```
+```{r}
+Bleaching_MAP_Means1 <- na.omit(Bleaching_MAP_Means)
+```
+
+```{r}
+Bleaching_MAP_Means1$Date <- as.Date(Bleaching_MAP_Means1$Date,"%d-%m-%y")
+```
+#Drop date 10-03-2020:
+```{r}
+Bleaching_MAP_Means1 <- Bleaching_MAP_Means1 %>%
+  filter(Date !="2020-03-10")
+```
+
+#CreateID
+```{r}
+my_cols <- c("Species", "Structure")
+Bleaching_MAP_Means1$ID <-do.call(paste, c(Bleaching_MAP_Means1[my_cols], sep = ""))
+```
+
+```{r}
+Bleaching_MAP_Means1$Experiment <- factor(Bleaching_MAP_Means1$Experiment)
+```
+```{r}
+Bleaching_MAP_Means1$Species <- factor(Bleaching_MAP_Means1$Species)
+```
+##Check data str
+```{r}
+str(Bleaching_MAP_Means1)
+summary(Bleaching_MAP_Means1)
+```
+Response to Bleaching per species
+```{r}
+Fullbxp <- ggplot(Bleaching_MAP_Means1, aes(x= NULL, y=Brightness_mean, group=Species)) +
+  geom_boxplot(aes(fill=Species))+
+  xlab("Measuring time points(Date)")+
+  ylab("Coral Brightness")+
+  scale_x_discrete()
+Fullbxp
+```
+Response per speceies per date
+```{r fig.width=10}
+Fullbxp + facet_grid(.~ Bleaching_MAP_Means1$Date)+
+  ggtitle("All Fragments pixel brightness vs time")
+```
+PLots above plot split per treatment
+```{r}
+Bleaching_Ctrl <- Bleaching_MAP_Means1 %>%
+  filter(Experiment %in% c("CONTROL"))
+```
+```{r}
+Bleaching_MAT <- Bleaching_MAP_Means1 %>%
+  filter(Experiment %in% c("MAP"))
+```
+```{r fig.width=10}
+Ctrlbxp <- ggplot(Bleaching_Ctrl, aes(x= NULL, y=Brightness_mean, group=Species)) +
+  geom_boxplot(aes(fill=Species))+
+  xlab("Measuring time points(Date)")+
+  ylab("Coral Brightness")+
+  scale_x_discrete()
+Ctrlbxp + facet_grid(.~ Date) + ggtitle("Control Fragments pixel brightness vs time") 
+```
+```{r fig.width=10}
+MATbxp <- ggplot(Bleaching_MAT, aes(x= NULL, y=Brightness_mean, group=Species)) +
+  geom_boxplot(aes(fill=Species))+
+  xlab("Measuring time points(Date)")+
+  ylab("Coral Brightness")+
+  scale_x_discrete()
+MATbxp + facet_grid(.~ Date)+
+  ggtitle("MAP Fragments pixel brightness vs time")
+```
+plots per species
+```{r}
+Bleaching_Por <- Bleaching_MAP_Means1 %>%
+  filter(Species %in% c("Porites cylindrica"))
+```
+Pocillopora
+```{r}
+Bleaching_Poc <- Bleaching_MAP_Means1 %>%
+  filter(Species %in% c("Pocillopora verrucose"))
+```
+Acropora
+```{r}
+Bleaching_Acr <- Bleaching_MAP_Means1 %>%
+  filter(Species %in% c("Acropora verweyi"))
+```
+Millepora
+```{r}
+Bleaching_Mil <- Bleaching_MAP_Means1 %>%
+  filter(Species %in% c("Millepora sp"))
+```
+
+```{r fig.width=10}
+Acrbxp <- ggplot(Bleaching_MAP_Means1, aes(x= NULL, y=Brightness_mean, group=Experiment)) +
+  geom_boxplot(aes(fill=Experiment))+
+  xlab("Measuring time points(Date)")+
+  ylab("Coral Brightness")+
+  scale_x_discrete()
+Acrbxp + facet_grid(.~ Bleaching_MAP_Means1$Date)+
+  ggtitle("Acropora Fragments pixel brightness vs time")
+```
+```{r fig.width=10}
+Porbxp <- ggplot(Bleaching_Por, aes(x= NULL, y=Brightness_mean, group=Experiment)) +
+  geom_boxplot(aes(fill=Experiment))+
+  xlab("Measuring time points(Date)")+
+  ylab("Coral Brightness")+
+  scale_x_discrete()
+Porbxp + facet_grid(.~ Bleaching_Por$Date)+
+  ggtitle("Porites Fragments pixel brightness vs time")
+```
+```{r fig.width=10}
+Pocbxp <- ggplot(Bleaching_Poc, aes(x= NULL, y=Brightness_mean, group=Experiment)) +
+  geom_boxplot(aes(fill=Experiment))+
+  xlab("Measuring time points(Date)")+
+  ylab("Coral Brightness")+
+  scale_x_discrete()
+Pocbxp + facet_grid(.~ Bleaching_Poc$Date)+
+  ggtitle("Poccilopora Fragments pixel brightness vs time")
+```
+```{r fig.width=10}
+Milbxp <- ggplot(Bleaching_Mil, aes(x= NULL, y=Brightness_mean, group=Experiment)) +
+  geom_boxplot(aes(fill=Experiment))+
+  xlab("Measuring time points(Date)")+
+  ylab("Coral Brightness")+
+  scale_x_discrete()
+Milbxp + facet_grid(.~ Bleaching_Mil$Date)+
+  ggtitle("Milepora Fragments pixel brightness vs time")
+```
+
+
+Models:
+```{r}
+simplelm <- lm(Brightness_mean~1, Bleaching_MAP_Means1)
+simplelm
+```
+Species as a fixed variable & better model
+```{r}
+fixedlm <- lm(Brightness_mean~ Species, data=Bleaching_MAP_Means1)
+fixedlm
+anova(fixedlm)
+anova(fixedlm, simplelm)
+```
+add in a random variable
+```{r}
+lmerand <- lme(Brightness_mean ~Species*Experiment*Date, data=Bleaching_MAP_Means1, random = ~1|Date)
+lmerand
+anova(lmerand)
+```
+```{r}
+lmeranDat <- lme(Brightness_mean ~ Species*Experiment , data=Bleaching_MAP_Means1, random = ~1|Date)
+lmeranDat
+anova(lmeranDat, lmerand)
+```
+```{r}
+lmerand.1 <- lme(Brightness_mean ~1, data=Bleaching_MAP_Means1, random = ~Structure|Date)
+lmerand.1
+```
+
+```{r}
+lme1 <- lme(Brightness_mean ~Species*Experiment*Date, data=Bleaching_MAP_Means1, random = ~ 1|Date/Survival_mean)
+lmeDate <- lme(Brightness_mean ~Species*Experiment*Date, data=Bleaching_MAP_Means1, random = ~ Structure|Date)
+lmeranSurv <- lme(Brightness_mean ~Species*Experiment*Date, data=Bleaching_MAP_Means1, random = ~ Survival_mean*Structure|Date)
+lmeExp <- lme(Brightness_mean ~Species*Experiment*Date, data=Bleaching_MAP_Means1, random= ~1|Date)
+anova(lmerand,lme1,lmeranSurv,lmeDate, lmeExp)
+```
+random=~Survival_mean*Structure|Date better than random=~Structure|Date which is slightly better than not specifying random lmerand
+
+```{r}
+lmeranSurv
+plot(lmeranSurv)
+```
+
+Now to fixed part? -->
+Brightness_mean ~ Fixed + Random
+```{r}
+GLStest <- gls(Brightness_mean~Species*Experiment+Date, data=Bleaching_MAP_Means1, method="REML")
+plot(GLStest)
+AIC(GLStest)
+```
+heterogenous but small magnitude
+
+
+Dealing with heterogeneity/ weighting variables:
+```{r}
+GLS <- gls(Brightness_mean ~ Species*Date*Experiment, data=Bleaching_MAP_Means1, method = "REML")
+op <-par(mfrow =c(1,1),mar=c(4,4,5,5))
+plot(GLS,which=c(1),col=1, add.smooth=FALSE,
+     caption ="")
+plot(Bleaching_MAP_Means1$Date, resid(GLS), xlab= "month", ylab="Residuals")
+plot(Bleaching_MAP_Means1$Brightness_mean, resid(GLS), xlab= "Brightness_mean", ylab="Residuals")
+par(op)
+anova(GLS, GLStest)
+```
+```{r}
+GLSFixed <- varFixed(∼Survival_mean)
+M.gls1 <- gls(Brightness_mean ∼ Species*Experiment*Date +(Structure/Date),
+weights = GLSFixed, data = Bleaching_MAP_Means1, method ="REML")
+anova(GLS, M.gls1)
+plot(M.gls1)
+```
+more residual magnitude but seems more bunched around 0
+
+variance per date (to deal with heterogenity)
+```{r}
+vf2 <- varIdent(form= ~ 1|Date)
+M.gls2 <-gls(Brightness_mean ~ Species*Date*Experiment, data= Bleaching_MAP_Means1, weights = vf2, method = "REML")
+anova(GLS, M.gls1, M.gls2)
+AIC(GLS2, M.gls1, M.gls2)
+plot(M.gls2)
+op <-par(mfrow =c(1,1),mar=c(4,4,5,5))
+plot(M.gls2,which=c(1),col=1, add.smooth=FALSE,
+     caption ="")
+plot(Bleaching_MAP_Means1$Date, resid(M.gls2), xlab= "month", ylab="Residuals")
+plot(Bleaching_MAP_Means1$Brightness_mean, resid(M.gls2), xlab= "Brightness_mean", ylab="Residuals")
+plot(Bleaching_MAP_Means1$Survival_mean, resid(M.gls2), xlab= "Survival_mean", ylab="Residuals")
+par(op)
+
+```
+
+```{r}
+vf2 <- varIdent(form= ~ Date|Structure)
+M.gls3 <-gls(Brightness_mean ~ Species*Date*Experiment, data= Bleaching_MAP_Means1, weights = vf2, method = "REML")
+anova(M.gls3, M.gls1, M.gls2)
+AIC(M.gls3, M.gls1, M.gls2)
+plot(M.gls3)
+```
+Variation by date than structure?
+```{r}
+vf3 <- varIdent(form =∼ Structure| Species*Date)
+M.gls4 <- gls(Brightness_mean ∼ Date*Experiment*Species,
+weights = vf3,data = Bleaching_MAP_Means1, method ="REML")
+plot(M.gls4)
+anova(M.gls2, M.gls4)
+```
+```{r}
+vf4 <- varIdent(form=~1|Date*Structure)
+M.gls6 <- gls(Brightness_mean ∼ Experiment*Species*Date,
+weights = vf4,data = Bleaching_MAP_Means1, method ="REML")
+plot(M.gls6)
+AIC(M.gls2, M.gls4, M.gls6, lmerand3,GLS)
+```{r}
+M.gam <- gam(Brightness_mean ~ Species*Experiment+s(Date), data=Bleaching_MAP_Means1)
+AIC(M.gam, M.gls2)
+```
+look at if there is grouping by Date: in 
+GLS
+```{r}
+plot(GLS,which = c(1), col = Bleaching_MAP_Means1$Date,
+add.smooth = FALSE, caption = "")
+```
+in MGLS4
+```{r}
+plot(M.gls4,which = c(1), col = Bleaching_MAP_Means1$Date,
+add.smooth = FALSE, caption = "")
+```
+in lmeranSurv
+```{r}
+plot(lmeranSurv,which = c(1), col = Bleaching_MAP_Means1$Date,
+add.smooth = FALSE, caption = "")
+```
+
+```{r}
+E <- resid(M.gls4)
+coplot(E ∼ Date | Experiment, data = Bleaching_MAP_Means1)
+```
+```{r}
+E <- resid(M.gls1)
+coplot( E ~ Date | Experiment, data = Bleaching_MAP_Means1, ylab="Ordinary residuals")
+```
+```{r}
+E <- resid(lmeranSurv)
+coplot( E ~ Date | Experiment, data = Bleaching_MAP_Means1)
+```
+```{r}
+E <- resid(lmeranSurv)
+coplot( E ~ Date | Species, data = Bleaching_MAP_Means1)
+```
+```{r}
+E <- resid(lmeranSurv)
+coplot( E ~ Survival_mean | Experiment, data = Bleaching_MAP_Means1)
+```
+```{r}
+E <- resid(lmeranSurv)
+coplot( E ~ Structure | Experiment, data = Bleaching_MAP_Means1)
+```
+Residuals zien er okee uit denk ik.
+
+Correlation with Survvial nog belangrijk om specifique uit te zoeken?
