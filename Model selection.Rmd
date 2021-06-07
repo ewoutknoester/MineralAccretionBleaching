@@ -1,0 +1,162 @@
+---
+title: "model selection"
+author: "Richard"
+date: "7-6-2021"
+output: html_document
+---
+```{r}
+setwd("C:/Users/hp/Documents/R/R-Git-Link/MATbleaching/MATbleaching")
+getwd()
+```
+read data:
+```{r}
+Bleaching_MAPcsv = read.csv("C:/Users/hp/Documents/R/R-Git-Link/MATbleaching/MATbleaching/Bleaching_MAP.csv", sep = ";")
+``` 
+
+```{r}
+library(ggfortify)
+library(MuMIn)
+library(olsrr)
+library(dplyr)
+library(tidyverse)
+library(broom)
+library(rstatix)
+library(ggplot2)
+library(tidyr)
+library(ggpubr)
+library(AICcmodavg)
+library(lme4)
+library(nlme)
+library(gratia)
+library(mgcv)
+library(lsmeans)
+library(lmerTest)
+```
+```{r}
+Bleaching_MAP2 <- Bleaching_MAPcsv %>%
+rename(
+  Brightness = "Green")
+```
+```{r}
+Bleaching_MAP2 <- Bleaching_MAP2 %>%
+rename(
+  Survival = Survival....)
+```
+#drop fragment
+```{r}
+Bleaching_MAP2$Fragment <- NULL
+```
+
+```{r}
+Bleaching_MAP_Means <- Bleaching_MAP2 %>%
+  group_by(Experiment, Structure, Species, Date) %>%
+  summarise_all(funs(median, mean), na.rm = TRUE)
+```
+#Drop date 10-03-2020:
+```{r}
+Bleaching_MAP_Means$Date <- as.Date(Bleaching_MAP_Means$Date,"%d-%m-%y")
+```
+```{r}
+Bleaching_MAP_Means <- Bleaching_MAP_Means %>%
+  filter(Date !="2020-03-10")
+```
+```{r}
+library(lubridate)
+Bleaching_MAP_Means$Days <- yday(Bleaching_MAP_Means$Date)-76
+Bleaching_MAP_Means$Days <- factor(Bleaching_MAP_Means$Days,ordered=is.ordered(c("0","8","15","22","29","36","8", "72","100")))
+```
+
+```{r}
+Bleaching_MAP_Means1 <- na.omit(Bleaching_MAP_Means)
+```
+```{r}
+Bleaching_MAP_Means1$Date <- factor(Bleaching_MAP_Means1$Date, levels=c("2020-03-16","2020-03-24","2020-03-31","2020-04-07","2020-04-14","2020-04-21","2020-05-05","2020-05-27","2020-06-24"), ordered=is.ordered(Bleaching_MAP_Means1))
+```
+
+
+#CreateID
+```{r}
+my_cols <- c("Species", "Structure")
+Bleaching_MAP_Means1$ID <-do.call(paste, c(Bleaching_MAP_Means1[my_cols], sep = ""))
+n <- unique(Bleaching_MAP_Means1$ID)
+length(n)
+```
+
+```{r}
+Bleaching_MAP_Means1$Experiment <- factor(Bleaching_MAP_Means1$Experiment)
+Bleaching_MAP_Means1$Species <- factor(Bleaching_MAP_Means1$Species)
+Bleaching_MAP_Means1$Structure <- factor(Bleaching_MAP_Means1$Structure)
+```
+##Check data str
+```{r}
+str(Bleaching_MAP_Means1)
+summary(Bleaching_MAP_Means1)
+```
+```{r}
+mod1<-lme(Brightness_mean ~ Experiment*Days+Species*Days+Species*Experiment, Bleaching_MAP_Means1, random=~1|ID)
+anova(mod1)
+```
+```{r}
+mod2 <- lme(Brightness_mean ~Experiment*Days+Species*Days, Bleaching_MAP_Means1, random=~1|ID)
+anova(mod2)
+AIC(mod1,mod2)
+```
+```{r}
+mod3 <- lme(Brightness_mean ~ Species*Experiment+Species*Days+Experiment*Days, data=Bleaching_MAP_Means1, random=~1|Days)
+anova(mod3)
+AIC(mod1,mod2,mod3)
+```
+```{r}
+mod4 <- lme(Brightness_mean ~ Species*Days+Experiment*Days, data=Bleaching_MAP_Means1, random=~1|Days)
+anova(mod4)
+AIC(mod1,mod2,mod3, mod4)
+```
+
+TRY lmer model:
+```{r}
+mod5 <- lmer(Brightness_mean ~ Experiment*Species*Days+(1|ID), data= Bleaching_MAP_Means1)
+anova(mod5)
+AIC(mod1,mod2,mod5)
+```
+better AIC
+
+```{r}
+plot(ranef(mod5))
+plot(resid(mod5))
+plot(cooks.distance(mod5))
+
+cooksd <- cooks.distance(mod5)
+plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance MOD2") +
+  abline(h = 4/72, lty = 1, col = "steelblue")+
+  text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4/72, names(cooksd),""), col="red")
+
+influential_obs <- as.numeric(names(cooksd)[(cooksd > (4/72))])
+influential_obs
+
+dfrm <- Bleaching_MAP_Means1[-influential_obs,]
+ni<-unique(dfrm$ID)  
+length(ni)
+```
+
+```{r}
+mod6 <- lmer(Brightness_mean ~Species*Experiment*Days +(1|ID), dfrm)
+anova(mod6)
+AIC(mod5,mod6)
+plot(resid(mod6))
+```
+
+```{r}
+lsmeans(mod6, pairwise~Experiment*Days*Species, adjust="tukey")
+```
+NA's due to no poccilopora in final date (Days 100)
+```{r}
+dfrm2 <- dfrm %>%
+  filter(Days !="100")
+mod7 <- lmer(Brightness_mean ~ Species*Days+Experiment*Days +(1|ID), dfrm2)
+anova(mod7)
+AIC(mod5,mod6, mod7)
+```
+```{r}
+lsmeans(mod7, pairwise~Experiment*Days*Species, adjust="tukey")
+```
+Ik denk mod 6 misschien - maar dacht ik vraag even
