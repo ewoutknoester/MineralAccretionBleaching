@@ -18,24 +18,7 @@ library(ggplot2)
 library(ggthemes) # Pretty plots
 library(ggpattern) # Pretty bar plots
 library(NCmisc) # Check packages used
-
-#library(ggfortify)
-#library(MuMIn)
-#library(olsrr)
-#library(dplyr)
-#library(broom)
-#library(tidyr)
-#library(AICcmodavg)
-#library(lme4)
-#library(nlme)
-#library(gratia)
-#library(mgcv)
-#library(lsmeans)
-#library(lmerTest)
-#library(magrittr) # for piping
-#library(ggeffects) # Plot marginal effects
-
-
+library(nlme) # GLS
 
 # Function to facilitate averaging dataset
 data_summary <- function(data, varname, groupnames){
@@ -44,7 +27,7 @@ data_summary <- function(data, varname, groupnames){
     c(mean = mean(x[[col]], na.rm=TRUE),
       sd = sd(x[[col]], na.rm=TRUE),
       n  = length(x[[col]]),
-      se = sd(x[[col]], na.rm=TRUE)/sqrt(length(x)))
+      se = sd(x[[col]], na.rm=TRUE)/sqrt(length(x[[col]])))
   }
   data_sum<-ddply(data, groupnames, .fun=summary_func,
                   varname)
@@ -59,18 +42,22 @@ data_summary <- function(data, varname, groupnames){
 
 # Read in raw data
 df0.raw <- read.csv("Bleaching_Mineral accretion bleaching.csv", check.names = FALSE, header = TRUE, 
-                    colClasses = c(Structure = "factor", Position = "factor", Species = "factor", Treatment = "factor"))
+           colClasses = c(Structure = "factor", Position = "factor", Species = "factor", Treatment = "factor"))
 
 # Convert to long dataframe
 df1.clean <- as.data.frame(long_panel(df0.raw, prefix = "_", begin = 0, end = 16, label_location = "end"))
 
 # Drop columns
-df1.clean <- subset(df1.clean, select = -c(wave, Experiment, Location, Position, Origin, Remarks, Comments))
+df1.clean <- subset(df1.clean, select = -c(Experiment, Location, Position, Origin, Remarks, Comments))
 
 # Drop empty dates
 df1.clean <- df1.clean %>%
              drop_na(Date)
 
+# Set column names
+names(df1.clean)[names(df1.clean) == "wave"] <- "Timepoint"
+
+# Drop dead fragments for bleaching data frame
 df2.bleach <- df1.clean %>%
               filter(Survival !="0")
 
@@ -82,84 +69,63 @@ df2.bleach$Brightness <- df2.bleach$AVG / df2.bleach$ControlAVG * 255
 df2.bleach <- subset(df2.bleach, select = -c(AVG, R, G, B, ControlAVG, ControlR, ControlG, ControlB, Cause))
 
 # Drop date 10-03-2021: Measurements taken using a different method/ under different weather
+# Drop last date: This last measurements was taken a month later instead of a week: model needs regular time intervals, also prevented convergence problems
 df2.bleach <- df2.bleach %>%
-  filter(Date !="10-Mar-21")
+  filter(Timepoint !="0" & Timepoint !="9")
 
-# Drop date 24-06-2021: This last measurements was taken a month later instead of a week: model needs regular time intervals
-#df2.bleach <- df2.bleach %>%
-#  filter(Date !="24-Jun-21")
-
-# Drop date 27-05-2021: This is recovery, without this date, colour intensity increases linearly
-#df2.bleach <- df2.bleach %>%
-#  filter(Date !="27-May-21")
-
-# Set date in proper format
+# Set time right
+## Set date in proper format
 df2.bleach$Date <- as.Date(df2.bleach$Date, "%d-%b-%y")
 
-# Set time to days from start experiment
+## Set time to days from start experiment
 df2.bleach <- as.data.frame(append(df2.bleach,
               list(Days = yday(df2.bleach$Date) - yday(df2.bleach$Date[1])), after = 5))
-df2.bleach$Days <- glmmTMB::numFactor(df2.bleach$Days)
 
-# glmmTMB AR needs Date as a factor
-df2.bleach$Date <- as.factor(df2.bleach$Date)
+## Set days to special factor that can be used in model
+df2.bleach$Days.nf <- glmmTMB::numFactor(df2.bleach$Days)
+
+## glmmTMB AR needs time as a factor
+df2.bleach$Timepoint <- as.factor(df2.bleach$Timepoint)
 
 # Transform from 0-255 scale to 0 - 1 scale: 0 = black, 1 = white
-df2.bleach$Brightness <- df2.bleach$Brightness / 255
+df2.bleach$Brightness.f <- df2.bleach$Brightness / 255
 
-# Summary of replicate Fragments (average & median of 4 frags per Structure: Structure becomes independent observation unit)
-#df2.bleach.mean <- data_summary(df2.bleach, varname = "Brightness", 
-#                                    groupnames = c("Treatment", "Structure", "Species", "Date"))
-
-# Unique id of fragments 
-#df2.bleach.mean$id <- paste(df2.bleach.mean$Structure, df2.bleach.mean$Species, sep = ".")
-
-# glmmTMB AR needs Date as a factor
-#df2.bleach.mean$Date <- as.factor(df2.bleach.mean$Date)
-
-# glmmTMB OU needs Date as numeric
-#df2.bleach.mean <- as.data.frame(append(df2.bleach.mean,
-#              list(Days = yday(df2.bleach.mean$Date) - yday(df2.bleach.mean$Date[1])), after = 5))
-
-#df2.bleach.mean$Days <- glmmTMB::numFactor(df2.bleach.mean$Days)
-
-#Bleaching_MAP_MeanMeans <- data_summary(df2.bleach, varname = "Brightness", groupnames = c("Treatment", "Species", "Date"))
+df2.bleach <- droplevels(df2.bleach)
 
 ```
 
-# Model selection
-```{r model selection}
+# Model selection Beta
+```{r model selection Beta}
 
 # Use beta regression as data are a form of ratio
-# Use all data (16 fragments per table) and correct for pseudo-replication using random effect
 # Including Date as factor/categorical predictor variable, as is allows for easier interpretation of data and no need for non-linear model/quadratic terms
-# Three way interaction Treatment*Species*Date likely overfitting model, so focusing on two-way interactions instead
 
 # Incorporating nested structure (use REML to compare using AIC)
-beta.all.0 <- glmmTMB(Brightness ~ Treatment*Species + Treatment*Days + Species*Days, REML = TRUE,
-           data = df2.bleach, family = list(family = "beta", link = "logit"))
+beta.all <- glmmTMB(Brightness.f ~ Treatment*Species*Days, REML = TRUE,
+           data = df2.bleach, family = beta_family(link = "logit"))
 
-beta.all.nes <- glmmTMB(Brightness ~ Treatment*Species + Treatment*Days + Species*Days + (1 | Structure), REML = TRUE,
-           data = df2.bleach, family = list(family = "beta", link = "logit"))
+beta.all.nes <- glmmTMB(Brightness.f ~ Treatment*Species*Days + (1 | Structure), REML = TRUE,
+           data = df2.bleach, family = beta_family(link = "logit"))
 
-AIC(beta.all.0, beta.all.nes) # Nested structure greatly improves AIC and accounts for independence fragments on same Structure
+AIC(beta.all, beta.all.nes) # Nesting improves AIC and accounts for independence fragments on same Structure
 
-# Autocorrelation Dates: using ou() as this allows for uneven dates
-beta.all.nes.ou <- glmmTMB(Brightness ~ Treatment*Species + Treatment*Days + Species*Days + (1 | Structure) + ou(Days + 0 | id), data = df2.bleach, family = list(family = "beta", link = "logit"))
-
-# Allowing for variable precision (dispersion) using full nested model: Tested for all combinations (+) but showing only final
-beta.all.nes.ou.d7 <- glmmTMB(Brightness ~ Treatment*Species + Treatment*Days + Species*Days + (1 | Structure) + ou(Days + 0 | id), data = df2.bleach, family = list(family = "beta", link = "logit"), dispformula = ~ Date + Species + Treatment)
+# Autocorrelation Dates: using ar1() despite uneven dates because ou() ran into convergence problems
+# Autocorrelation Dates: modeled over Structure not individual fragments because of convergence problems
+# Convergence problems with variable precision, so not pursued
+beta.all.nes.ar <- glmmTMB(Brightness.f ~ Treatment*Species*Timepoint +
+                          (1 | Structure) + ar1(Timepoint + 0 | Structure),
+                          data = df2.bleach, family = beta_family(link = "logit"))
 
 # Final model results
-car::Anova(beta.all.nes.ou.d7)
-summary(beta.all.nes.ou.d7)
+car::Anova(beta.all.nes.ar)
+summary(beta.all.nes.ar)
 
 ```
 
-# Model validation
+## Model validation
 ```{r model validation}
 
-mod <- beta.all.nes.ou.d7
+mod <- beta.all.nes.ar
 modOutput <- simulateResiduals(fittedModel = mod, plot = F)
 
 op <- par(mfrow = c(2, 3), mar = c(5, 4, 1, 2))
@@ -174,136 +140,81 @@ plot(fitted(mod) ~ df2.bleach$Brightness)
 par(op)
 
 ```
-# Post hoc
+
+## Post hoc
 ```{r post hoc}
 
-HSD.TS <- emmeans(beta.all.nes.ou.d7, specs = pairwise ~ Treatment | Species, adjust = "tukey", type = "response")
-HSD.TS$contrasts
-
-HSD.TD <- emmeans(beta.all.nes.ou.d7, specs = pairwise ~ Treatment | Days, adjust = "tukey", type = "response")
-HSD.TD$contrasts
+HSD.ALL <- emmeans(beta.all.nes.ar, specs = pairwise ~ Treatment | Timepoint | Species, adjust = "tukey", type = "response")
 
 ```
 
 # Plotting
 ```{r}
 
-## Treatment | Species
-# Get averages
-summary.TS <- data_summary(df2.bleach, varname = "Brightness", groupnames = c("Treatment", "Species"))
+## Treatment X Time X Species plot
 
 # Post hoc letters
-sigletters.TS <- multcomp::cld(HSD.TS$emmeans, alpha = 0.05, Letters = letters, decreasing = T) # get CLD
+sigletters.ALL <- multcomp::cld(HSD.ALL$emmeans, alpha = 0.05, Letters = letters, decreasing = T) # get CLD
 
 # Make order match with summary dataframe
-sigletters.TS <- sigletters.TS[order(sigletters.TS$Treatment),]
-sigletters.TS <- sigletters.TS %>% mutate(.group = str_squish(.group)) # remove white spaces
+sigletters.ALL <- sigletters.ALL[order(sigletters.ALL$Treatment),]
+sigletters.ALL <- sigletters.ALL %>% mutate(.group = str_squish(.group)) # remove white spaces
 
 # Merge sig.letter dataframe into the summary dataframe
-summary.TS <- cbind(summary.TS, siglet.loc = sigletters.TS$.group)
+summary.ALL <- sigletters.ALL
 
 # Whole bunch of stuff to transform letters to an asterisk
-summary.TS <- as.data.frame(append(summary.TS, list(wave = ifelse(summary.TS$Treatment == "Control", 1, 2)), after = 0))
-summary.TS <- as.data.frame(append(summary.TS, list(id = rep(c(1,2,3,4), 2)), after = 0))              
-summary.TS <- widen_panel(panel_data(summary.TS), separator = "_")
-summary.TS <- as.data.frame(append(summary.TS,
-              list(Star_1 = "", Star_2 = ifelse(summary.TS$siglet.loc_1 == summary.TS$siglet.loc_2, "", "*"))))
-summary.TS <- as.data.frame(long_panel(summary.TS, prefix = "_", begin = 1, end = 2, label_location = "end"))
+summary.ALL <- as.data.frame(append(summary.ALL, list(wave = ifelse(summary.ALL$Treatment == "Control", 1, 2)), after = 0))
+summary.ALL <- as.data.frame(append(summary.ALL, list(id = rep(seq(1, 32, by=1), 2)), after = 0))              
+summary.ALL <- widen_panel(panel_data(summary.ALL), separator = "_")
+summary.ALL <- as.data.frame(append(summary.ALL,
+              list(Star_1 = "", Star_2 = ifelse(summary.ALL$.group_1 == summary.ALL$.group_2, "", "*"))))
+summary.ALL <- as.data.frame(long_panel(summary.ALL, prefix = "_", begin = 1, end = 2, label_location = "end"))
 
-# Plot
-ggplot(summary.TS, aes(x = Species, fill = Treatment, pattern = Treatment, y = Brightness))+
-  geom_bar_pattern(position = position_dodge(preserve = "single"), width = 0.7, stat = "identity", pattern_color = "black",
-                   pattern_fill = "black", pattern_density = 0.3, pattern_spacing = 0.03, colour = "black", size = 1,
-                   aes(pattern = Treatment))+ scale_pattern_manual(values = c("none", "circle"))+
-  labs(x = "Species")+
-  scale_y_continuous("Brightness", breaks = c(0, 0.5, 1), label = waiver (), limits = c (0, 1))+
-  geom_errorbar(aes(ymin=Brightness-(1*se), ymax=Brightness+(1*se)), width=.2, size = 1, position=position_dodge(.7))+
-  geom_text(data = summary.TS, aes(x=Species, y = Brightness + se, label = Star), 
-            vjust= -0.5, hjust = 2.75, size = 8, fontface = "bold", position=position_dodge(.7))+
-  theme_economist()+scale_colour_economist()+
-  scale_x_discrete(expand = c(0, 0.75))+
-  scale_y_continuous(expand = c(0, 0))+
-  theme(
-    axis.title.x = element_text(color = "black", vjust = 5, hjust = 0.6, size = 14),
-    axis.text.x = element_text(angle = -25, hjust = 0, vjust = 1, size = 12, face = "bold"),
-    axis.title.y = element_text(color = "black" , vjust = 5, size = 14),
-    axis.text.y = element_text(size = 12, face = "bold", vjust = 0),
-    legend.title = element_text(size = 14),
-    legend.text = element_text(size = 12, face = "bold"),
-    plot.margin = margin(t = 10, r = 60,  b = 5,  l = 15),
-    panel.background = element_rect(fill = "#FCFCFC"),
-    plot.background = element_rect(fill = "#FFFFFF"),
-    panel.grid.major = element_line(colour = "#797979", size = 0.2)) +
-  geom_line(data = data.frame(x = c(rep(0,100)), y = seq(0,1, length.out = 100), z = factor(rep(c("Control","MAP"), 50))), 
-            aes(x = x, fill = z, pattern = z, y = y, color = y, fill = x), size = 7)+
-  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF"))+
-  scale_colour_gradientn(colours = c("#000000", "#FFFFFF"),
-                         breaks  = c(0, 1),
-                         limits  = c(0, 1))+
-  guides(colour = "none")
-ggsave("TreatmentSpecies.tiff", width = 23, height = 11, units = "cm", dpi=1200, compression = "lzw")
-
-## Treatment | Date
-# Get averages
-summary.TD <- data_summary(df2.bleach, varname = "Brightness", groupnames = c("Treatment", "Date"))
-
-# Post hoc letters
-sigletters.TD <- multcomp::cld(HSD.TD$emmeans, alpha = 0.05, Letters = letters, decreasing = T) # get CLD
-
-# Make order match with summary dataframe
-sigletters.TD <- sigletters.TD[order(sigletters.TD$Treatment),]
-sigletters.TD <- sigletters.TD %>% mutate(.group = str_squish(.group)) # remove white spaces
-
-# Merge sig.letter dataframe into the summary dataframe
-summary.TD <- cbind(summary.TD, siglet.loc = sigletters.TD$.group)
-
-# Whole bunch of stuff to transform letters to an asterisk
-summary.TD <- as.data.frame(append(summary.TD, list(wave = ifelse(summary.TD$Treatment == "Control", 1, 2)), after = 0))
-summary.TD <- as.data.frame(append(summary.TD, list(id = rep(c(1,2,3,4,5,6,7,8,9), 2)), after = 0))              
-summary.TD <- widen_panel(panel_data(summary.TD), separator = "_")
-summary.TD <- as.data.frame(append(summary.TD,
-              list(Star_1 = "", Star_2 = ifelse(summary.TD$siglet.loc_1 == summary.TD$siglet.loc_2, "", "*"))))
-summary.TD <- as.data.frame(long_panel(summary.TD, prefix = "_", begin = 1, end = 2, label_location = "end"))
+# Get date
+TP_date <- select(df2.bleach, c("Timepoint", "Date"))
+TP_date <- unique(TP_date)
+summary.ALL <- left_join(summary.ALL, TP_date, by = "Timepoint")
 
 # Set date as date
-summary.TD <- as.data.frame(append(summary.TD,
-              list(Date2 = as.Date(strptime(as.character(summary.TD$Date), "%Y-%m-%d"), format = "%Y-%m-%d"))))
+#summary.TD <- as.data.frame(append(summary.TD,
+#              list(Date2 = as.Date(strptime(as.character(summary.TD$Date), "%Y-%m-%d"), format = "%Y-%m-%d"))))
 
 # Plot
-ggplot(summary.TD, aes(x = as.Date(Date2), fill = Treatment, pattern = Treatment, y = Brightness))+
-  geom_bar_pattern(position = position_dodge(preserve = "single"), width = 5, stat = "identity", pattern_color = "black",
-                   pattern_fill = "black", pattern_density = 0.3, pattern_spacing = 0.02, colour = "black", size = 1,
-                   aes(pattern = Treatment))+ scale_pattern_manual(values = c("none", "circle"))+
-  labs(x = "")+
-  scale_y_continuous("Brightness", breaks = c(0, 0.5, 1), label = waiver (), limits = c (0, 1))+
-  geom_errorbar(aes(ymin=Brightness-(1*se), ymax=Brightness+(1*se)), width=2, size = 0.5, position=position_dodge(5))+
-  geom_text(data = summary.TD, aes(x=as.Date(Date2), y = Brightness +se, label = Star), 
-            vjust= -0, hjust = 1.5, size = 7, fontface = "bold", position=position_dodge(5))+
+ggplot(summary.ALL, aes(x = as.Date(Date),  y = response,  fill = Treatment))+
+  geom_hline(yintercept=0.4, linetype="dashed", color = "#F0C187", size = 0.75)+
+  geom_hline(yintercept=0.6, linetype="dashed", color = "#E07979", size = 0.75)+
+  facet_wrap(~ Species, ncol = 1)+
+  scale_fill_manual(values=c("#BEBEBE", "#7E7E7E"))+
+  geom_bar(position="dodge", stat = "identity", width = 5) +
+  labs(x = "", y = "Brightness")+
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 0.84), breaks = c(0, 0.25, 0.5, 0.75))+
+  geom_errorbar(aes(ymin = response-(1*SE), ymax=response+(1*SE)), width=2, size = 0.5, position= position_dodge(5))+
+  geom_text(data = summary.ALL, aes(x=as.Date(Date), y = response + SE, label = Star), 
+            vjust= 0.2, hjust = 1.35, size = 7, fontface = "bold", position=position_dodge(5))+
   theme_economist()+scale_colour_economist()+
-  scale_y_continuous(expand = c(0, 0))+
-  scale_x_date(limits = c(as.Date("2021-03-05"), as.Date("2021-07-01")), expand = c(0, 0))+
+  scale_x_date(limits = c(as.Date("2020-03-1"), as.Date("2020-06-06")), expand = c(0, 0),
+               date_breaks = "1 month", date_labels = "%b")+
   theme(
+    strip.text.x = element_text(size = 14, face = "bold.italic", vjust = 2, margin = margin(0.4, 0, 0.1, 0, "cm")),
     axis.title.x = element_text(color = "black", vjust = -1, hjust = 0.50, size = 14),
     axis.text.x = element_text(angle = -0, hjust = 0, vjust = 1, size = 12, face = "bold"),
-    axis.title.y = element_text(color = "black" , vjust = 5, size = 14),
-    axis.text.y = element_text(size = 12, face = "bold", vjust = 0),
+    axis.title.y = element_text(color = "black" ,  face = "bold", vjust = 5, size = 14),
+    axis.text.y = element_text(size = 12, vjust = 0),
     legend.title = element_text(size = 14),
     legend.text = element_text(size = 12, face = "bold"),
-    plot.margin = margin(t = 10, r = 0,  b = 5,  l = 15),
+    plot.margin = margin(t = 5, r = 5,  b = 5,  l = 15),
     panel.background = element_rect(fill = "#FCFCFC"),
     plot.background = element_rect(fill = "#FFFFFF"),
-    panel.grid.major = element_line(colour = "#797979", size = 0.2)) +
-  geom_line(data = data.frame(x = as.Date(c(rep("2021-03-05",100))), y = seq(0,1, length.out = 100), z = factor(rep(c("Control","MAP"), 50))), 
-            aes(x = x, fill = z, pattern = z, y = y, color = y, fill = x), size = 10)+
-  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF"))+
-  scale_colour_gradientn(colours = c("#000000", "#FFFFFF"),
-                         breaks  = c(0, 1),
-                         limits  = c(0, 1))+
+    panel.grid.major = element_line(colour = "#797979", size = 0.1))+
+  geom_line(data = data.frame(x = as.Date(c(rep("2020-03-01", 100))), y = seq(0, 1, length.out = 100),
+                              z = factor(rep(c("Control","MAP"), 50))), 
+                              aes(x = x, fill = z, pattern = z, y = y, color = y, fill = x), size = 30)+
+  scale_colour_gradientn(colours = c("#401100", "#FFFFFF"),
+                         breaks  = c(0, 0.90),
+                         limits  = c(0, 0.90))+
   guides(colour = "none")
-ggsave("TreatmentDate.tiff", width = 23, height = 11, units = "cm", dpi=1200, compression = "lzw")
-
-
-
+ggsave("Bleaching_TreatmentXDateXSpecies.tiff", width = 18, height = 25, units = "cm", dpi=1200, compression = "lzw")
 
 ```
 
