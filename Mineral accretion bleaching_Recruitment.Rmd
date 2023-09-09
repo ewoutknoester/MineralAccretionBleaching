@@ -1,0 +1,178 @@
+---
+title: "MAT bleaching - Recruitment"
+author: "Ewout Knoester"
+date: "22 August 2023"
+output: html_document
+---
+
+# Setup
+```{r setup, include=FALSE}
+
+rm(list=ls()) # Clear workspace
+knitr::opts_knit$set(root.dir = '/tmp') # Set directory at current directory for all subsequent chunks
+options(scipen = 100) # Remove scientific notation
+
+library(data.table)
+library(emmeans) # Pairwise comparisons
+library(ggthemes) # Pretty plots
+library(nlme) # GLS
+library(panelr) # Convert data from wide to long
+library(readxl) # Import excel sheets
+library(tidyverse) # Tidy data
+library(writexl) # Write Excel
+library(MASS) # Negative binomial
+library(car)
+library(DHARMa)
+
+# Function to facilitate averaging datasets
+data_summary <- function(data, varname, groupnames){
+  require(plyr)
+  summary_func <- function(x, col){
+    c(mean = mean(x[[col]], na.rm=TRUE),
+      sd = sd(x[[col]], na.rm=TRUE),
+      n  = length(x[[col]]),
+      se = sd(x[[col]], na.rm=TRUE)/sqrt(length(x[[col]])))
+  }
+  data_sum<-ddply(data, groupnames, .fun=summary_func,
+                  varname)
+  data_sum <- plyr::rename(data_sum, c("mean" = varname))
+ return(data_sum)
+}
+
+```
+
+# Data info
+```{r data info}
+
+# Tables were placed on 23-Dec-2019
+# Recruits were counted per genus on 24-Feb-2021 (i.e. 14 months after placement) by Ewout Knoester
+
+```
+
+
+# Data selection and cleaning
+```{r data selection, include=FALSE, warning = T}
+
+# Import excel sheet
+data0.raw <- read_excel("Raw data/Recruitment_2023-08.xlsx", sheet = "Data") 
+
+# Select relevant Treatments (exclude T3: rusting tables)
+data1.clean <- data0.raw[grepl('T1', data0.raw$Description) | grepl('T2', data0.raw$Description), ] 
+
+# Exclude recruit not on structure
+data1.clean[1, 8] = 0
+data1.clean[1, 11] = 0
+
+## Select relevant columns
+data1.clean <- dplyr::select(data1.clean, c("Description", "Pocillopora", "Stylophora", "Other"))
+
+## Rename Treatments
+names(data1.clean)[names(data1.clean) == "Description"] <- "Treatment"
+data1.clean$Treatment <- ifelse(grepl('T1', data1.clean$Treatment), "MAT", "Control")
+
+# To long format (slight hassle)
+## Get genera names from columns (use to rename and get the long data frame)
+gentot <- ncol(data1.clean) - 1 # Total number of genera listed
+## Standardize genus names to numbers
+genum <- data.table(Genum = seq(from = 1, to = gentot, by = 1), Genus = colnames(data1.clean[2:ncol(data1.clean)]),
+                    Gener = paste("Genus_", seq(2:ncol(data1.clean)), sep = ""))
+## Add numerical genus names to data frame
+names(data1.clean)[2:ncol(data1.clean)] <- genum$Gener
+## Convert to long data frame
+data2.long <- as.data.frame(long_panel(data1.clean, prefix = "_", begin = 1, end = gentot, label_location = "end"))
+## Rename columns
+names(data2.long)[names(data2.long) == "id"] <- "Structure"
+names(data2.long)[names(data2.long) == "Genus"] <- "Count"
+names(data2.long)[names(data2.long) == "wave"] <- "Genus"
+## Set genus number back to original names
+genum <- dplyr::select(genum, -c("Gener"))
+data2.long <- cbind(data2.long, Genus = genum$Genus)
+data2.long <- dplyr::select(data2.long, -c("Genus"))
+
+#! Decision to stick with counts (instead of transforming to densities), because of low counts
+
+# Summary
+## Per genus
+data3.sum <- data_summary(data2.long, varname = "Count", groupnames = c("Treatment" ,"Genus"))
+data3.sum <- dplyr::select(data3.sum, c("Treatment", "Genus", "Count"))
+## In total
+data2.wide <- data1.clean
+data2.wide$Tot <- data2.wide$Genus_1 + data2.wide$Genus_2 + data2.wide$Genus_3
+data3.sum.tot <- data_summary(data2.wide, varname = "Tot", groupnames = c("Treatment"))
+data3.sum.tot <- dplyr::select(data3.sum.tot, c("Treatment", "Tot", "se"))
+## Combine
+data3.combi <- left_join(data3.sum, data3.sum.tot, by = "Treatment")
+names(data3.combi)[names(data3.combi) == "se"] <- "se.Tot"
+
+
+```
+
+# Model
+```{r model}
+
+data2.wide$Treatment <- as.factor(data2.wide$Treatment)
+
+negb <- glm.nb(Tot ~ Treatment, data = data2.wide)
+
+Anova(negb)
+
+mod <- negb
+modOutput <- simulateResiduals(fittedModel = mod, plot = F)
+
+op <- par(mfrow = c(2, 3), mar = c(5, 4, 1, 2))
+plotResiduals(modOutput, quantreg = T, quantiles = 0.5, rank = T, smoothScatter = F)
+testDispersion(modOutput)
+testUniformity(modOutput)
+plotResiduals(modOutput, form = data2.wide$Treatment)
+abline(0,0)
+plot(fitted(mod) ~ data2.wide$Tot)
+par(op)
+
+
+```
+
+
+# Graph
+```{r graph}
+
+Recruits.TreatxGenus <- ggplot(data3.combi)+  
+  geom_bar(position = "stack", stat = "identity", aes(x = Treatment, y = Count, fill = forcats::fct_rev(Genus)))+
+  geom_errorbar(aes(x = Treatment, ymax = Tot + (1*se.Tot), ymin = Tot - (1*se.Tot)),
+                width=.2, size = 1, position=position_dodge(.9))+
+  scale_fill_manual("Genus", values = c("#bd7ebe", "#c86558", "#ffee65"))+
+  geom_bar(data=data3.combi[(data3.combi$Genus=="Pocillopora"),],
+           stat = "identity", aes(x = Treatment, y = Tot, fill=Genus), alpha=0, size=1, color="black")+
+  theme_economist()+scale_colour_economist()+
+  labs(y = "Average number of recruits", x = "Treatment")+
+  guides(fill=guide_legend(title="Genus"))+
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 5))+
+  theme(
+    panel.margin.y = unit(0, "cm"),
+    strip.background = element_blank(),
+    legend.position = "right",
+    legend.title = element_text(size = 11, face = "bold", hjust = 0.3),
+    legend.text = element_text(size = 11, face = "italic"),
+    axis.title.x = element_text(size = 12, vjust = -2),
+    axis.text.x = element_text(size = 12, face = "bold", vjust = 0.5),
+    axis.title.y = element_text( size = 12, vjust = 3),
+    axis.text.y = element_text(size = 12, face = "bold", vjust = 0.4),
+    panel.background = element_rect(fill = "#FCFCFC"),
+    plot.background = element_rect(fill = "#FFFFFF"),
+    panel.grid.major = element_line(colour = "#797979", size = 0.3),
+    axis.ticks = element_blank()
+    ) 
+ggsave("Recruits_TreatmentxGenus.tiff", width = 9.5, height = 7.5, units = "cm", dpi=1200, compression = "lzw")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

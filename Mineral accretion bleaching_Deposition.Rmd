@@ -1,0 +1,109 @@
+---
+title: "MAT bleaching - Deposition"
+author: "Ewout Knoester"
+date: "29 August 2023"
+output: html_document
+---
+
+# Setup
+```{r setup, include=FALSE}
+
+rm(list=ls()) # Clear workspace
+knitr::opts_knit$set(root.dir = '/tmp') # Set directory at current directory for all subsequent chunks
+options(scipen = 100) # Remove scientific notation
+
+library(data.table)
+library(emmeans) # Pairwise comparisons
+library(ggthemes) # Pretty plots
+library(nlme) # GLS
+library(panelr) # Convert data from wide to long
+library(readxl) # Import excel sheets
+library(tidyverse) # Tidy data
+library(writexl) # Write Excel
+
+# Function to facilitate averaging datasets
+data_summary <- function(data, varname, groupnames){
+  require(plyr)
+  summary_func <- function(x, col){
+    c(mean = mean(x[[col]], na.rm=TRUE),
+      sd = sd(x[[col]], na.rm=TRUE),
+      n  = length(x[[col]]),
+      se = sd(x[[col]], na.rm=TRUE)/sqrt(length(x[[col]])))
+  }
+  data_sum<-ddply(data, groupnames, .fun=summary_func,
+                  varname)
+  data_sum <- plyr::rename(data_sum, c("mean" = varname))
+ return(data_sum)
+}
+
+```
+
+# Data info
+```{r data info}
+
+# Tables were placed on 23-Dec-2019
+# Circumferences were measured on 8 points per table (4 on legs, 4 on frame)
+# Original diameter was 12 mm, but circumference of 4.4 cm due to ribbing pattern on rebar
+
+```
+
+
+# Data selection and cleaning
+```{r data selection, include=FALSE, warning = T}
+
+# Import excel sheet
+data0.raw <- read_excel("Raw data/CaCO3 deposition thickness.xlsx", sheet = "Data") 
+
+# Select relevant Treatments (exclude T3: rusting tables)
+data1.clean <- data0.raw[!grepl('Control2', data0.raw$Treatment), ] 
+
+# Calculate average per Table
+data1.clean$Circum <- rowMeans(data1.clean[ , c("Leg_1","Side_4")], na.rm=TRUE)
+
+# Summary
+data2.sum <- data_summary(data1.clean, varname = "Circum", groupnames = c("Treatment"))
+
+# Get diameters from circumference
+data2.sum$Diameter <- data2.sum$Circum/pi
+
+```
+
+# Graph
+```{r graph}
+
+ggplot(data2.sum)+  
+  geom_bar(position = "stack", stat = "identity", aes(x = Treatment, fill = Treatment, y = Circum))+
+  geom_errorbar(aes(x = Treatment, ymax = Circum + (1*se), ymin = Circum - (1*se)),
+                width=.2, size = 1, position=position_dodge(.9))+
+  scale_fill_manual("Genus", values = c("#BEBEBE", "#7E7E7E"))+
+  geom_hline(yintercept=4.4, linetype="dashed", color = "black", size = 0.75)+
+  theme_economist()+scale_colour_economist()+
+  labs(y = "Circumference (cm)", x = "Treatment")+
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 9.7), breaks = c(0, 2, 4, 6, 8))+
+  theme(
+    panel.margin.y = unit(0, "cm"),
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 12, face = "bold", vjust = 0.5),
+    axis.title.y = element_text( size = 12, vjust = 3),
+    axis.text.y = element_text(size = 12, face = "bold", vjust = 0.4),
+    panel.background = element_rect(fill = "#FCFCFC"),
+    plot.background = element_rect(fill = "#FFFFFF"),
+    panel.grid.major = element_line(colour = "#797979", size = 0.3),
+    axis.ticks = element_blank(),
+    legend.position="none"
+    ) 
+ggsave("Deposition_Circumference.tiff", width = 9.5, height = 7.5, units = "cm", dpi=1200, compression = "lzw")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

@@ -62,14 +62,14 @@ df2.bleach <- df1.clean %>%
               filter(Survival !="0")
 
 # Calculate corrected Brightness
-#! Choice of AVG brightness (not Green brightness)
+#! Choice of AVG brightness (similar to Blue and Green results, Red was more variable)
 df2.bleach$Brightness <- df2.bleach$AVG / df2.bleach$ControlAVG * 255
 
 # Drop more columns
 df2.bleach <- subset(df2.bleach, select = -c(AVG, R, G, B, ControlAVG, ControlR, ControlG, ControlB, Cause))
 
-# Drop date 10-03-2021: Measurements taken using a different method/ under different weather
-# Drop last date: This last measurements was taken a month later instead of a week: model needs regular time intervals, also prevented convergence problems
+# Drop date 10-03-2021: These first measurements were taken using a different method/ under different weather
+# Drop last date: This last measurements was taken a month later instead of a week: model needs regular time intervals; also prevented convergence problems
 df2.bleach <- df2.bleach %>%
   filter(Timepoint !="0" & Timepoint !="9")
 
@@ -90,7 +90,7 @@ df2.bleach$Timepoint <- as.factor(df2.bleach$Timepoint)
 # Transform from 0-255 scale to 0 - 1 scale: 0 = black, 1 = white
 df2.bleach$Brightness.f <- df2.bleach$Brightness / 255
 
-df2.bleach <- droplevels(df2.bleach)
+df2.bleach <- droplevels(df2.bleach) # Drop unused factor levels
 
 ```
 
@@ -109,7 +109,7 @@ beta.all.nes <- glmmTMB(Brightness.f ~ Treatment*Species*Days + (1 | Structure),
 
 AIC(beta.all, beta.all.nes) # Nesting improves AIC and accounts for independence fragments on same Structure
 
-# Autocorrelation Dates: using ar1() despite uneven dates because ou() ran into convergence problems
+# Autocorrelation Dates: using ar1() despite somewhat uneven dates because ou() ran into convergence problems
 # Autocorrelation Dates: modeled over Structure not individual fragments because of convergence problems
 # Convergence problems with variable precision, so not pursued
 beta.all.nes.ar <- glmmTMB(Brightness.f ~ Treatment*Species*Timepoint +
@@ -117,8 +117,7 @@ beta.all.nes.ar <- glmmTMB(Brightness.f ~ Treatment*Species*Timepoint +
                           data = df2.bleach, family = beta_family(link = "logit"))
 
 # Final model results
-car::Anova(beta.all.nes.ar)
-summary(beta.all.nes.ar)
+car::Anova(beta.all.nes.ar) # Significant three-way interaction
 
 ```
 
@@ -180,6 +179,9 @@ summary.ALL <- left_join(summary.ALL, TP_date, by = "Timepoint")
 #summary.TD <- as.data.frame(append(summary.TD,
 #              list(Date2 = as.Date(strptime(as.character(summary.TD$Date), "%Y-%m-%d"), format = "%Y-%m-%d"))))
 
+# Rename MAP to MAT
+levels(summary.ALL$Treatment)[levels(summary.ALL$Treatment)=="MAP"] <- "MAT"
+
 # Plot
 ggplot(summary.ALL, aes(x = as.Date(Date),  y = response,  fill = Treatment))+
   geom_hline(yintercept=0.4, linetype="dashed", color = "#F0C187", size = 0.75)+
@@ -208,7 +210,7 @@ ggplot(summary.ALL, aes(x = as.Date(Date),  y = response,  fill = Treatment))+
     plot.background = element_rect(fill = "#FFFFFF"),
     panel.grid.major = element_line(colour = "#797979", size = 0.1))+
   geom_line(data = data.frame(x = as.Date(c(rep("2020-03-01", 100))), y = seq(0, 1, length.out = 100),
-                              z = factor(rep(c("Control","MAP"), 50))), 
+                              z = factor(rep(c("Control","MAT"), 50))), 
                               aes(x = x, fill = z, pattern = z, y = y, color = y, fill = x), size = 30)+
   scale_colour_gradientn(colours = c("#401100", "#FFFFFF"),
                          breaks  = c(0, 0.90),
