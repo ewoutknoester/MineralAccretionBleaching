@@ -14,9 +14,9 @@ options(scipen = 100) # Remove scientific notation
 
 library(betareg) # Beta regression
 library(car) # ANOVA results GLM
-library(cowplot) # Combine plots
 library(emmeans) # Pairwise comparisons
 library(ggthemes) # Pretty plots
+library(lubridate)
 library(NCmisc) # Check packages used
 library(nlme) # GLS
 library(panelr) # Convert data from wide to long
@@ -171,7 +171,7 @@ data$Cause <- as.factor(data$Cause)
 
 # ----- Inspect fragments with unhealthy start -----
 data.badstart <- subset(data, Condition < 80 & wave == 0)
-data.badstart %>% group_by(Treatment) %>% count() # 24 fragments: 18 Control and 6 MAT
+data.badstart %>% group_by(Treatment) %>% count() # 24 fragments: 18 Control and 6 MAT (of which 2 predated)
 data.badstart %>% group_by(Species) %>% count() # 16 out of 26 were Porites
 # Select fragments with healthy start only (and corrected to start at 100% still)
 data <- subset(data, !(id %in% data.badstart$id))
@@ -340,7 +340,7 @@ ggplot(data.start.condition.sum, aes(x = Species, fill = Treatment, y = Conditio
 
 # Select condition data
 data.cond <- dplyr::select(data, -c("EV_All", "Length_All", "Length", "Width1", "Width2", "EV", "Condition", "SGR", "DateAVG", "Comments_All", "Cause_All"))
-# Exclude missing fragments and fragments with heavily reduced condition due to predation
+# Exclude missing fragments (1) and fragments with heavily reduced condition due to predation (1)
 data.cond <- subset(data.cond, Cause != "Missing" & Cause!= "Exclude")
 
 # Average per table to reduce outliers
@@ -477,8 +477,9 @@ ggplot(data.cond.sum, aes(x = as.Date(Date), fill = Treatment, y = ConditionCor)
 
 # DATA PREP
 data.sgr <- subset(data, wave != 0) # Exclude first data point (SGR can only start from 2nd)
-## Create subset for SGR where Condition > 80: only healthy corals will be used to determine SGR
+## Create subset for SGR where Condition >= 80: only healthy corals will be used to determine SGR
 data.sgr <- subset(data.sgr, Condition >= 80 | is.na(Condition))
+## Exclude 32 predated fragments (16 on MAT and 16 on Control)
 data.sgr=data.sgr[!grepl("Exclude growth",data.sgr$Cause),] # Exclude predated fragments
 data.sgr=data.sgr[!grepl("Exclude",data.sgr$Cause),] # Exclude predated fragments
 ## Select relevant columns
@@ -701,7 +702,7 @@ P.data.sum <- as.data.frame(long_panel(P.data.sum, prefix = "_", begin = 1, end 
 EV_TreatmentxSpecies <- ggplot(P.data.sum, aes(x = Species, fill = Treatment, y = EV.increase))+
   geom_bar(stat = "identity", position = position_dodge())+ 
   labs(y = "EV increase (%)", x = "Species")+
-  scale_y_continuous(expand = c(0, 0), breaks = c(0, 1000, 2000, 3000), limits = c(0, 3600))+
+  scale_y_continuous(expand = c(0, 0), breaks = c(10, 100, 1000, 10000), limits = c(1,1e4), trans = "log10")+
   geom_errorbar(aes(ymin=EV.increase-(1*se), ymax=EV.increase+(1*se)), width=.2, position=position_dodge(.9))+
   geom_text(data = P.data.sum, aes(x=Species, y = EV.max + se + 180, label = Star), 
             vjust= 0.2, hjust = 2.6, size = 8.5, fontface = "bold", position=position_dodge(0.9))+

@@ -3,22 +3,19 @@
 ```{r setup}
 
 rm(list=ls()) # Clear workspace
-knitr::opts_knit$set(root.dir = '/tmp') #Set directory at current directory for all subsequent chunks
+knitr::opts_knit$set(root.dir = '/tmp') # Set directory at current directory for all subsequent chunks
 
-library(tidyverse)
-library(panelr) # Convert data from wide to long
-library(lubridate) # Date calculations
-library(rstatix)
-library(glmmTMB) # Nested beta regression
 library(DHARMa) # Nested model validation
-library(car) # ANOVA results GLM
-library(emmeans) # Post hoccing
-library(ggpubr)
-library(ggplot2)
-library(ggthemes) # Pretty plots
+library(emmeans) # Post hocs
+library(ggplot2) # Plots
 library(ggpattern) # Pretty bar plots
+library(ggthemes) # Pretty plots
+library(glmmTMB) # Nested beta regression
+library(lubridate) # Date calculations
 library(NCmisc) # Check packages used
-library(nlme) # GLS
+library(panelr) # Convert data from wide to long
+library(rstatix)
+library(tidyverse)
 
 # Function to facilitate averaging dataset
 data_summary <- function(data, varname, groupnames){
